@@ -1,0 +1,42 @@
+---
+title: "Лабораторна робота № 4. 'PimaIndiansDiabetes'"
+author: "Хань Євгеній"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r lab4_variant3, echo=TRUE, message=FALSE, warning=FALSE}
+library(mlbench)
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+
+data(PimaIndiansDiabetes)
+diabetes_data <- as_tibble(PimaIndiansDiabetes)
+
+df_clean <- diabetes_data %>%
+  filter(glucose > 0 & insulin > 0)
+
+print(paste("Початкова к-сть спостережень:", nrow(diabetes_data)))
+print(paste("К-сть спостережень після очищення:", nrow(df_clean)))
+
+df_clean %>%
+  select(glucose, insulin) %>%
+  summary() %>%
+  kable(caption = "Описові статистики (glucose та insulin)") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
+
+
+model <- lm(glucose ~ insulin, data = df_clean)
+
+
+summary(model)
+
+
+ggplot(df_clean, aes(x = insulin, y = glucose)) +
+  geom_point(alpha = 0.5) + 
+  geom_smooth(method = "lm", col = "blue", se = FALSE) + 
+  labs(title = "Парна регресія: Glucose vs Insulin",
+       x = "2-годинний сивороточний інсулін (insulin)",
+       y = "Концентрація глюкози (glucose)") +
+  theme_bw()
