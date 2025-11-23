@@ -1,0 +1,89 @@
+---
+title: "Лабораторна робота № 4. Частина I: Класифікація з caret"
+author: "Хань Євгеній"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: united
+---
+
+**Мета:** Виконати побудову моделі класифікації на основі методу LDA для датасета `palmerpenguins`, реалізувати збереження та відновлення моделі з бази даних SQLite.
+
+## Виконання роботи
+
+```{r lab4_part1_full_code, echo=TRUE, message=FALSE, warning=FALSE}
+required_packages <- c("caret", "palmerpenguins", "dplyr", "DBI", "RSQLite", "MASS", "e1071")
+new_packages <- required_packages[!(required_packages %in% installed.packages()[,"Package"])]
+if(length(new_packages)) install.packages(new_packages, repos = "[http://cran.us.r-project.org](http://cran.us.r-project.org)")
+
+library(caret)
+library(palmerpenguins)
+library(dplyr)
+library(DBI)
+library(RSQLite)
+library(MASS)  
+library(e1071)  
+data("penguins")
+
+
+df_penguins <- penguins %>%
+  na.omit() %>%
+  dplyr::select(species, island, bill_length_mm, bill_depth_mm, 
+                flipper_length_mm, body_mass_g, year, sex)
+
+set.seed(123)
+trainIndex <- createDataPartition(df_penguins$sex, p = 0.75, list = FALSE)
+trainData <- df_penguins[trainIndex, ]
+testData  <- df_penguins[-trainIndex, ]
+
+
+fitControl <- trainControl(method = "repeatedcv", number = 10, repeats = 3)
+
+lda_model <- train(sex ~ ., 
+                   data = trainData, 
+                   method = "lda", 
+                   trControl = fitControl)
+
+print("Результати навчання моделі:")
+print(lda_model)
+
+db_file <- "models.sqlite"
+con <- dbConnect(RSQLite::SQLite(), dbname = db_file)
+
+dbExecute(con, "CREATE TABLE IF NOT EXISTS ml_models (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  model_name TEXT,
+                  model_object BLOB,
+                  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )")
+
+
+model_blob <- serialize(lda_model, NULL)
+
+dbExecute(con, "INSERT INTO ml_models (model_name, model_object) VALUES (?, ?)",
+          params = list("LDA_Penguins_Sex_Caret", list(model_blob)))
+
+print(paste("Модель успішно збережена в БД:", db_file))
+dbDisconnect(con)
+
+con <- dbConnect(RSQLite::SQLite(), dbname = db_file)
+
+res <- dbGetQuery(con, "SELECT model_object FROM ml_models ORDER BY id DESC LIMIT 1")
+loaded_model <- unserialize(res$model_object[[1]])
+
+dbDisconnect(con)
+
+print("Модель успішно завантажена з БД. Тип об'єкта:")
+print(class(loaded_model))
+
+
+predicted_classes <- predict(loaded_model, newdata = testData)
+
+
+conf_matrix <- confusionMatrix(data = predicted_classes, 
+                               reference = testData$sex)
+
+print("Матриця неточностей та метрики якості:")
+print(conf_matrix)
