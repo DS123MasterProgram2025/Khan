@@ -1,0 +1,117 @@
+---
+title: "Лабораторна робота № 9. Аналіз часових рядів"
+author: "Хань Євгеній"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: united
+---
+
+**Варіант 1-** Дослідити динаміку щорічної кількості випадків жіночого безпліддя в Україні.
+
+## Виконання роботи
+
+1.  **Структурний зсув (2014 рік)-** втрата статистики з окупованих територій.
+2.  **Тренд-** демографічні зміни та реформування системи охорони здоров'я.
+
+### Програмна реалізація
+
+```{r lab9_final_robust, echo=TRUE, message=FALSE, warning=FALSE}
+ensure_package <- function(pkg) {
+  if (!requireNamespace(pkg, quietly = TRUE)) {
+    install.packages(pkg, repos = "[http://cran.us.r-project.org](http://cran.us.r-project.org)", dependencies = TRUE)
+  }
+}
+pkgs <- c("tidyverse", "forecast", "tseries", "readxl", "ggplot2")
+invisible(lapply(pkgs, ensure_package))
+
+library(tidyverse)
+library(forecast)
+library(tseries)
+library(readxl)
+library(ggplot2)
+
+filename <- "data/infertility.xlsx"
+
+if (!file.exists(filename)) {
+  stop(paste("Файл не знайдено:", filename))
+}
+
+df_raw <- read_excel(filename, sheet = 1, skip = 1)
+
+colnames(df_raw)[1] <- "Region"
+
+if ("Стать" %in% names(df_raw)) {
+  df_raw <- df_raw %>% filter(Стать == "ж")
+}
+
+
+df_clean <- df_raw %>% filter(!is.na(Region))
+
+
+col_names <- names(df_clean)
+
+is_year_col <- !is.na(suppressWarnings(as.numeric(col_names)))
+
+
+year_cols <- col_names[is_year_col]
+
+print(paste("Знайдено колонок з роками:", length(year_cols)))
+print(year_cols) 
+
+
+df_ukraine <- df_clean %>%
+  
+  select(Region, all_of(year_cols)) %>%
+  pivot_longer(cols = -Region, names_to = "Year", values_to = "Cases") %>%
+  mutate(
+    Year = as.numeric(Year),
+    Cases = as.numeric(Cases)
+  ) %>%
+  filter(!is.na(Cases)) %>%
+  group_by(Year) %>%
+  summarise(Total_Cases = sum(Cases, na.rm = TRUE)) %>%
+  arrange(Year)
+
+print("--- Агреговані дані ---")
+print(head(df_ukraine))
+
+
+ts_data <- ts(df_ukraine$Total_Cases, start = min(df_ukraine$Year), frequency = 1)
+
+plot_dynamics <- autoplot(ts_data) +
+  ggtitle("Динаміка випадків жіночого безпліддя в Україні") +
+  xlab("Рік") +
+  ylab("Кількість випадків") +
+  theme_minimal() +
+  geom_point() +
+  geom_smooth(method = "loess", se = FALSE, color = "blue", linetype = "dashed")
+
+print(plot_dynamics)
+
+print("--- Тест Дікі-Фуллера (ADF) ---")
+tryCatch({
+  print(adf.test(ts_data))
+}, error = function(e) { print("Тест ADF неможливий (ряд занадто стабільний/короткий)") })
+
+fit_arima <- auto.arima(ts_data)
+
+print("--- Параметри моделі ARIMA ---")
+print(summary(fit_arima))
+
+checkresiduals(fit_arima)
+
+forecast_result <- forecast(fit_arima, h = 3)
+
+print("--- Прогноз на 3 роки ---")
+print(forecast_result)
+
+plot_forecast <- autoplot(forecast_result) +
+  ggtitle("Прогноз жіночого безпліддя (ARIMA)") +
+  xlab("Рік") +
+  ylab("Кількість випадків") +
+  theme_minimal()
+
+print(plot_forecast)
