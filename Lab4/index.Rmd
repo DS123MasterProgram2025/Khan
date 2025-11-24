@@ -1,0 +1,85 @@
+---
+title: "Розділ 8 Лабораторна робота №7. Пошук асоціативних правил (Варіант 3)"
+author: "Хань Євгеній"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: united
+---
+
+**Мета:** Виконати пошук асоціативних правил для датасету `Epub` (електронні публікації) за допомогою алгоритму Apriori.
+
+## Виконання роботи
+
+```{r lab7_variant3_full, echo=TRUE, message=FALSE, warning=FALSE}
+ensure_package <- function(pkg) {
+  if (!requireNamespace(pkg, quietly = TRUE)) {
+    message(paste("Встановлюю пакет:", pkg))
+    install.packages(pkg, repos = "[http://cran.us.r-project.org](http://cran.us.r-project.org)", dependencies = TRUE)
+  }
+}
+required_pkgs <- c("arules", "arulesViz", "tidyverse", "RColorBrewer")
+invisible(lapply(required_pkgs, ensure_package))
+library(arules)
+library(arulesViz)
+library(tidyverse)
+library(RColorBrewer)
+
+data("Epub")
+
+print("--- Загальна інформація про датасет Epub ---")
+summary(Epub)
+print("--- Перші 5 транзакцій ---")
+inspect(Epub[1:5])
+itemFrequencyPlot(Epub, 
+                  topN = 20, 
+                  type = "absolute", 
+                  col = brewer.pal(8, "Spectral"), 
+                  main = "Топ-20 найпопулярніших документів",
+                  ylab = "Кількість завантажень",
+                  cex.names = 0.7)
+
+print("--- Запуск алгоритму Apriori ---")
+rules <- apriori(Epub, 
+                 parameter = list(supp = 0.001, conf = 0.6, minlen = 2, target = "rules"))
+
+print(paste("Знайдено правил:", length(rules)))
+
+if (length(rules) > 0) {
+  subset_matrix <- is.subset(rules, rules)
+  subset_matrix[lower.tri(subset_matrix, diag = TRUE)] <- NA
+  redundant <- colSums(subset_matrix, na.rm = TRUE) >= 1
+  rules_pruned <- rules[!redundant]
+} else {
+  rules_pruned <- rules
+}
+
+print(paste("Правил після видалення дублікатів/надлишкових:", length(rules_pruned)))
+
+rules_sorted <- sort(rules_pruned, by = "lift", decreasing = TRUE)
+
+print("--- Топ-15 правил за метрикою Lift ---")
+if (length(rules_sorted) > 0) {
+  inspect(rules_sorted[1:min(15, length(rules_sorted))])
+} else {
+  print("Правил не знайдено з такими параметрами.")
+}
+
+if (length(rules_sorted) > 0) {
+  plot(rules_sorted, method = "scatter", 
+       measure = c("support", "lift"), 
+       shading = "confidence", 
+       main = "Розподіл правил (Support vs Lift)")
+  
+  plot(rules_sorted[1:min(20, length(rules_sorted))], 
+       method = "graph", 
+       control = list(type = "items"), 
+       main = "Граф зв'язків для Топ-20 правил")
+  
+  plot(rules_sorted[1:min(20, length(rules_sorted))], 
+       method = "grouped", 
+       control = list(k = 5),
+       main = "Групова матриця правил")
+}
